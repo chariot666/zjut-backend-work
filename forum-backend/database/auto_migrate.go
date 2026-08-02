@@ -2,26 +2,18 @@ package database
 
 import (
 	"fmt"
-
 	"forum-backend/model"
 )
 
-
-func AutoMigrate(){
-
+func AutoMigrate() {
 	err := DB.AutoMigrate(
 		&model.User{},
 		&model.Post{},
+		&model.Comment{},
+		&model.Like{},
 	)
-
-
 	if err != nil {
-
 		panic("数据库迁移失败")
-
 	}
-
-
 	fmt.Println("数据库表创建成功")
-
 }

@@ -5,23 +5,13 @@ import (
 	"forum-backend/model"
 )
 
-
-func FindUserByUsername(username string) (*model.User,error){
-
+func FindUserByUsername(username string) (*model.User, error) {
 	var user model.User
-
-	err:=database.DB.
-		Where("username=?",username).
+	err := database.DB.
+		Where("username=?", username).
 		First(&user).Error
-
-
-	return &user,err
+	return &user, err
 }
-
-
-
-func CreateUser(user *model.User) error{
-
+func CreateUser(user *model.User) error {
 	return database.DB.Create(user).Error
-
 }
