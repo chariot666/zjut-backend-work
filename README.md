@@ -1,4 +1,4 @@
-zjut-backend-work
+zjut-backend-work目前只有基础部分，进阶还没怎么做，别拷打我😭
 技术栈
  Go
  Gin
