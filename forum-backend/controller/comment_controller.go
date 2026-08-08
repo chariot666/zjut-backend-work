@@ -11,40 +11,41 @@ import (
 
 // 创建评论
 func CreateComment(c *gin.Context) {
-	var comment model.Comment
-	if err := c.ShouldBindJSON(&comment); err != nil {
-		utils.Error(
-			c,
-			http.StatusBadRequest,
-			"参数错误",
-		)
+	postID, ok := parseIDParam(c, "post_id")
+	if !ok {
+		return
+	}
+	var req struct {
+		Content string `json:"content" binding:"required,min=1,max=1000"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "参数错误")
 		return
 	}
 	userID, exists := c.Get("user_id")
 	if !exists {
-		utils.Error(
-			c,
-			http.StatusUnauthorized,
-			"未登录",
-		)
+		utils.Error(c, http.StatusUnauthorized, "未认证")
 		return
 	}
-	comment.UserID = userID.(uint)
+
+	var post model.Post
+	if err := database.DB.First(&post, postID).Error; err != nil {
+		utils.Error(c, http.StatusNotFound, "记录不存在")
+		return
+	}
+
+	comment := model.Comment{
+		Content: req.Content,
+		UserID:  userID.(uint),
+		PostID:  postID,
+	}
 	result := database.DB.Create(&comment)
 	if result.Error != nil {
-		utils.Error(
-			c,
-			http.StatusInternalServerError,
-			"评论失败",
-		)
+		utils.Error(c, http.StatusInternalServerError, "评论失败")
 		return
 	}
-	utils.Success(
-		c,
-		gin.H{
-			"comment": comment,
-		},
-	)
+	database.DB.Preload("User").First(&comment, comment.ID)
+	utils.Created(c, comment.ToResponse())
 }
 
 // 获取帖子评论

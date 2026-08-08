@@ -12,17 +12,12 @@ import (
 func JWTAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"message": "未登录",
-			})
+		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+			utils.Error(c, http.StatusUnauthorized, "未认证")
 			c.Abort()
 			return
 		}
-		tokenString := strings.TrimPrefix(
-			authHeader,
-			"Bearer ",
-		)
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 		token, err := jwt.Parse(
 			tokenString,
 			func(token *jwt.Token) (interface{}, error) {
@@ -34,16 +29,38 @@ func JWTAuth() gin.HandlerFunc {
 			},
 		)
 		if err != nil || !token.Valid {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"message": "token无效",
-				"error":   err.Error(),
-			})
+			utils.Error(c, http.StatusUnauthorized, "token无效")
 			c.Abort()
 			return
 		}
-		claims := token.Claims.(jwt.MapClaims)
-		userID := uint(claims["user_id"].(float64))
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			utils.Error(c, http.StatusUnauthorized, "token无效")
+			c.Abort()
+			return
+		}
+		userIDFloat, ok := claims["user_id"].(float64)
+		if !ok {
+			utils.Error(c, http.StatusUnauthorized, "token无效")
+			c.Abort()
+			return
+		}
+		userID := uint(userIDFloat)
+		role, _ := claims["role"].(string)
 		c.Set("user_id", userID)
+		c.Set("role", role)
+		c.Next()
+	}
+}
+
+func AdminAuth() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		role, exists := c.Get("role")
+		if !exists || role != "admin" {
+			utils.Error(c, http.StatusForbidden, "禁止访问")
+			c.Abort()
+			return
+		}
 		c.Next()
 	}
 }

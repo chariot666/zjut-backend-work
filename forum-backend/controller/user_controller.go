@@ -2,6 +2,7 @@ package controller
 
 import (
 	"net/http"
+	"regexp"
 
 	"forum-backend/database"
 	"forum-backend/model"
@@ -13,20 +14,16 @@ import (
 
 // 注册
 func Register(c *gin.Context) {
-	var req struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-	}
-	// 接收参数
+	var req model.RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.Error(
-			c,
-			http.StatusBadRequest,
-			"参数错误",
-		)
+		utils.Error(c, http.StatusBadRequest, "参数错误: "+err.Error())
 		return
 	}
-	// 检查用户名是否存在
+	if !regexp.MustCompile(`^[0-9]+$`).MatchString(req.Username) {
+		utils.Error(c, http.StatusBadRequest, "用户名只能由数字组成")
+		return
+	}
+
 	var count int64
 	database.DB.Model(&model.User{}).
 		Where(
@@ -35,60 +32,40 @@ func Register(c *gin.Context) {
 		).
 		Count(&count)
 	if count > 0 {
-		utils.Error(
-			c,
-			http.StatusBadRequest,
-			"用户名已存在",
-		)
+		utils.Error(c, http.StatusConflict, "用户名已存在")
 		return
 	}
-	// 密码加密
+
 	hashPassword, err := bcrypt.GenerateFromPassword(
 		[]byte(req.Password),
 		bcrypt.DefaultCost,
 	)
 	if err != nil {
-		utils.Error(
-			c,
-			http.StatusInternalServerError,
-			"密码加密失败",
-		)
+		utils.Error(c, http.StatusInternalServerError, "密码加密失败")
 		return
 	}
 	user := model.User{
 		Username: req.Username,
+		Name:     req.Name,
 		Password: string(hashPassword),
+		Role:     req.Role,
 	}
-	// 保存用户
 	result := database.DB.Create(&user)
 	if result.Error != nil {
-		utils.Error(
-			c,
-			http.StatusInternalServerError,
-			"注册失败",
-		)
+		utils.Error(c, http.StatusInternalServerError, "注册失败")
 		return
 	}
-	utils.Success(
+	utils.Created(
 		c,
-		gin.H{
-			"message": "注册成功",
-		},
+		user.ToResponse(),
 	)
 }
 
 // 登录
 func Login(c *gin.Context) {
-	var req struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-	}
+	var req model.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		utils.Error(
-			c,
-			http.StatusBadRequest,
-			"参数错误",
-		)
+		utils.Error(c, http.StatusBadRequest, "参数错误: "+err.Error())
 		return
 	}
 	var user model.User
@@ -98,43 +75,34 @@ func Login(c *gin.Context) {
 	).
 		First(&user)
 	if result.Error != nil {
-		utils.Error(
-			c,
-			http.StatusBadRequest,
-			"用户不存在",
-		)
+		utils.Error(c, http.StatusUnauthorized, "用户名或密码错误")
 		return
 	}
-	// 验证密码
 	err := bcrypt.CompareHashAndPassword(
 		[]byte(user.Password),
 		[]byte(req.Password),
 	)
 	if err != nil {
-		utils.Error(
-			c,
-			http.StatusBadRequest,
-			"密码错误",
-		)
+		utils.Error(c, http.StatusUnauthorized, "用户名或密码错误")
 		return
 	}
-	// 生成JWT
+
 	token, err := utils.GenerateToken(
 		user.ID,
 		user.Username,
+		user.Role,
 	)
 	if err != nil {
-		utils.Error(
-			c,
-			http.StatusInternalServerError,
-			"token生成失败",
-		)
+		utils.Error(c, http.StatusInternalServerError, "token生成失败")
 		return
 	}
 	utils.Success(
 		c,
 		gin.H{
-			"token": token,
+			"access_token": token,
+			"token_type":   "Bearer",
+			"expires_in":   utils.TokenExpireSeconds,
+			"user":         user.ToResponse(),
 		},
 	)
 }

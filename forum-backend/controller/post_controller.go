@@ -1,187 +1,253 @@
 package controller
 
 import (
-	"encoding/json"
 	"forum-backend/database"
 	"forum-backend/model"
 	"forum-backend/utils"
 	"net/http"
-	"time"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 func CreatePost(c *gin.Context) {
-	var post model.Post
-	if err := c.ShouldBindJSON(&post); err != nil {
-		c.JSON(400, gin.H{
-			"message": "参数错误",
-		})
+	var req struct {
+		Content string `json:"content" binding:"required,min=1,max=2000"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		utils.Error(c, http.StatusBadRequest, "参数错误")
 		return
 	}
-	userID, _ := c.Get("user_id")
+	userID, exists := c.Get("user_id")
+	if !exists {
+		utils.Error(c, http.StatusUnauthorized, "未认证")
+		return
+	}
+	post := model.Post{
+		Content: req.Content,
+	}
 	post.UserID = userID.(uint)
-	database.DB.Create(&post)
-	utils.Success(c, gin.H{
-		"post": post,
-	})
+	if err := database.DB.Create(&post).Error; err != nil {
+		utils.Error(c, http.StatusInternalServerError, "发布失败")
+		return
+	}
+	database.DB.Preload("User").First(&post, post.ID)
+	utils.Created(c, buildPostResponse(post, 0))
 }
+
 func GetPostList(c *gin.Context) {
+	page := parsePositiveInt(c.Query("page"), 1)
+	pageSize := parsePositiveInt(c.Query("page_size"), 20)
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	var total int64
 	var posts []model.Post
-	result := database.DB.
-		Order("created_at desc").
+	query := database.DB.Model(&model.Post{})
+	if err := query.Count(&total).Error; err != nil {
+		utils.Error(c, http.StatusInternalServerError, "获取帖子失败")
+		return
+	}
+
+	order := postListOrder(c.Query("sort"))
+	result := query.
+		Preload("User").
+		Order(order).
+		Limit(pageSize).
+		Offset((page - 1) * pageSize).
 		Find(&posts)
 	if result.Error != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "获取帖子失败",
-		})
+		utils.Error(c, http.StatusInternalServerError, "获取帖子失败")
 		return
+	}
+
+	items := make([]model.PostResponse, 0, len(posts))
+	for _, post := range posts {
+		items = append(items, buildPostResponse(post, countComments(post.ID)))
 	}
 	utils.Success(c, gin.H{
-		"posts": posts,
+		"items": items,
+		"meta": gin.H{
+			"page":      page,
+			"page_size": pageSize,
+			"total":     total,
+		},
 	})
 }
+
 func GetPostDetail(c *gin.Context) {
-	id := c.Param("id")
-	// Redis key
-	key := "post:" + id
-	// 查询Redis
-	val, err := database.RDB.Get(
-		database.Ctx,
-		key,
-	).Result()
-	if err == nil {
-		var post model.Post
-		json.Unmarshal(
-			[]byte(val),
-			&post,
-		)
-		c.JSON(200, gin.H{
-			"source": "redis",
-			"post":   post,
-		})
+	id, ok := parseIDParam(c, "post_id")
+	if !ok {
 		return
 	}
-	// Redis没有，查询MySQL
 	var post model.Post
-	result := database.DB.First(
-		&post,
-		id,
-	)
+	result := database.DB.
+		Preload("User").
+		Preload("Comments", func(db *gorm.DB) *gorm.DB {
+			return db.Order("created_at asc")
+		}).
+		Preload("Comments.User").
+		First(&post, id)
 	if result.Error != nil {
-		utils.Error(
-			c,
-			404,
-			"没有帖子",
-		)
+		utils.Error(c, http.StatusNotFound, "记录不存在")
 		return
 	}
-	// 浏览量+1
+
 	database.DB.Model(&model.Post{}).
-		Where("id=?", id).
+		Where("id = ?", id).
 		UpdateColumn(
 			"view_count",
 			gorm.Expr("view_count + ?", 1),
 		)
 	post.ViewCount++
-	// 写入Redis
-	data, _ := json.Marshal(post)
-	database.RDB.Set(
-		database.Ctx,
-		key,
-		data,
-		time.Minute*10,
-	)
-	utils.Success(c, gin.H{
-		"source": "mysql",
-		"post":   post,
+
+	comments := make([]model.CommentResponse, 0, len(post.Comments))
+	for _, comment := range post.Comments {
+		comments = append(comments, comment.ToResponse())
+	}
+	utils.Success(c, model.PostDetailResponse{
+		PostResponse: buildPostResponse(post, int64(len(comments))),
+		Comments:     comments,
 	})
 }
+
 func DeletePost(c *gin.Context) {
-	// 获取登录用户ID
 	userID, exists := c.Get("user_id")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"message": "未登录",
-		})
+		utils.Error(c, http.StatusUnauthorized, "未认证")
 		return
 	}
-	// 获取帖子ID
-	id := c.Param("id")
+	id, ok := parseIDParam(c, "post_id")
+	if !ok {
+		return
+	}
 	var post model.Post
-	// 查询帖子
 	result := database.DB.First(&post, id)
 	if result.Error != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"message": "帖子不存在",
-		})
+		utils.Error(c, http.StatusNotFound, "记录不存在")
 		return
 	}
-	// 判断是不是自己的帖子
 	if post.UserID != userID.(uint) {
-		c.JSON(http.StatusForbidden, gin.H{
-			"message": "无权删除",
-		})
+		utils.Error(c, http.StatusForbidden, "禁止访问")
 		return
 	}
-	// 删除
-	database.DB.Delete(&post)
-	database.RDB.Del(
-		database.Ctx,
-		"post:"+id,
-	)
-	utils.Success(c, gin.H{
-		"message": "删除成功",
-	})
+	if err := deletePostWithRelatedData(id); err != nil {
+		utils.Error(c, http.StatusInternalServerError, "删除失败")
+		return
+	}
+	utils.Success(c, nil)
 }
+
 func UpdatePost(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"message": "未登录",
-		})
+		utils.Error(c, http.StatusUnauthorized, "未认证")
 		return
 	}
-	id := c.Param("id")
+	id, ok := parseIDParam(c, "post_id")
+	if !ok {
+		return
+	}
 	var post model.Post
-	// 查询帖子
 	result := database.DB.First(&post, id)
 	if result.Error != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"message": "帖子不存在",
-		})
+		utils.Error(c, http.StatusNotFound, "记录不存在")
 		return
 	}
-	// 判断作者
 	if post.UserID != userID.(uint) {
-		c.JSON(http.StatusForbidden, gin.H{
-			"message": "无权修改",
-		})
+		utils.Error(c, http.StatusForbidden, "禁止访问")
 		return
 	}
-	// 接收修改内容
 	var updateData struct {
-		Title   string `json:"title"`
-		Content string `json:"content"`
+		Content string `json:"content" binding:"required,min=1,max=2000"`
 	}
 	if err := c.ShouldBindJSON(&updateData); err != nil {
-		utils.Error(
-			c,
-			http.StatusBadRequest,
-			"参数错误",
-		)
+		utils.Error(c, http.StatusBadRequest, "参数错误")
 		return
 	}
-	// 更新
-	post.Title = updateData.Title
 	post.Content = updateData.Content
-	database.DB.Save(&post)
-	database.RDB.Del(
-		database.Ctx,
-		"post:"+id,
-	)
-	utils.Success(c, gin.H{
-		"post": post,
+	if err := database.DB.Save(&post).Error; err != nil {
+		utils.Error(c, http.StatusInternalServerError, "更新失败")
+		return
+	}
+	database.DB.Preload("User").First(&post, id)
+	utils.Success(c, buildPostResponse(post, countComments(post.ID)))
+}
+
+func AdminDeletePost(c *gin.Context) {
+	id, ok := parseIDParam(c, "post_id")
+	if !ok {
+		return
+	}
+	var post model.Post
+	if err := database.DB.First(&post, id).Error; err != nil {
+		utils.Error(c, http.StatusNotFound, "记录不存在")
+		return
+	}
+	if err := deletePostWithRelatedData(id); err != nil {
+		utils.Error(c, http.StatusInternalServerError, "删除失败")
+		return
+	}
+	utils.Success(c, nil)
+}
+
+func buildPostResponse(post model.Post, commentCount int64) model.PostResponse {
+	return model.PostResponse{
+		ID:           post.ID,
+		Content:      post.Content,
+		Author:       post.User.ToResponse(),
+		LikeCount:    cachedLikeCount(post),
+		CommentCount: commentCount,
+		ViewCount:    post.ViewCount,
+		CreatedAt:    post.CreatedAt,
+	}
+}
+
+func countComments(postID uint) int64 {
+	var count int64
+	database.DB.Model(&model.Comment{}).
+		Where("post_id = ?", postID).
+		Count(&count)
+	return count
+}
+
+func postListOrder(sort string) string {
+	if sort == "hot" {
+		return "((like_count * 3) + (view_count * 1) + ((SELECT COUNT(*) FROM comments WHERE comments.post_id = posts.id) * 2)) desc, created_at desc"
+	}
+	return "created_at desc"
+}
+
+func parsePositiveInt(value string, fallback int) int {
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed < 1 {
+		return fallback
+	}
+	return parsed
+}
+
+func parseIDParam(c *gin.Context, name string) (uint, bool) {
+	id, err := strconv.ParseUint(c.Param(name), 10, 64)
+	if err != nil || id == 0 {
+		utils.Error(c, http.StatusBadRequest, "参数错误")
+		return 0, false
+	}
+	return uint(id), true
+}
+
+func deletePostWithRelatedData(postID uint) error {
+	return database.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("post_id = ?", postID).Delete(&model.Comment{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("post_id = ?", postID).Delete(&model.Like{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&model.Post{}, postID).Error
 	})
 }

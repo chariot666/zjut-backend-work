@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"forum-backend/config"
 	"forum-backend/controller"
 	"forum-backend/database"
 	"forum-backend/middleware"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -13,81 +15,52 @@ import (
 func main() {
 	// 加载配置
 	config.LoadConfig()
+	logFile, err := middleware.InitLogger("logs/app.log")
+	if err != nil {
+		log.Printf("日志初始化失败: %v", err)
+	} else {
+		defer logFile.Close()
+	}
 	database.InitMySQL()
 	database.InitRedis()
 	database.AutoMigrate()
-	r := gin.Default()
+	r := gin.New()
+	r.Use(middleware.RequestLogger(), middleware.Recovery())
+	registerRoutes(r)
+	r.Run(fmt.Sprintf(":%d", config.AppConfig.Server.Port))
+}
+
+func registerRoutes(r *gin.Engine) {
 	r.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"message": "pong",
 		})
 	})
-	// 测试JWT
-	auth := r.Group("/api/test")
-	auth.Use(middleware.JWTAuth())
-	auth.GET("/auth", func(c *gin.Context) {
-		c.JSON(200, gin.H{
-			"message": "验证成功",
-		})
-	})
-	// 用户接口
-	r.POST(
-		"/api/user/register",
+
+	api := r.Group("/api/v1")
+
+	api.POST(
+		"/auth/register",
 		controller.Register,
 	)
-	r.POST(
-		"/api/user/login",
+	api.POST(
+		"/auth/login",
 		controller.Login,
 	)
-	// 帖子公开接口
-	r.GET(
-		"/api/post/list",
-		controller.GetPostList,
-	)
-	r.GET(
-		"/api/post/:id",
-		controller.GetPostDetail,
-	)
-	// 帖子登录接口
-	postAuth := r.Group("/api/post")
-	postAuth.Use(middleware.JWTAuth())
-	postAuth.POST(
-		"/create",
-		controller.CreatePost,
-	)
-	postAuth.DELETE(
-		"/:id",
-		controller.DeletePost,
-	)
-	postAuth.PUT(
-		"/:id",
-		controller.UpdatePost,
-	)
-	// 点赞接口
-	postAuth.POST(
-		"/:id/like",
-		controller.LikePost,
-	)
-	postAuth.DELETE(
-		"/:id/unlike",
-		controller.UnlikePost,
-	)
-	// 评论接口
-	commentAuth := r.Group("/api/comment")
 
-	commentAuth.Use(middleware.JWTAuth())
+	auth := api.Group("")
+	auth.Use(middleware.JWTAuth())
+	auth.POST("/posts", controller.CreatePost)
+	auth.GET("/posts", controller.GetPostList)
+	auth.GET("/posts/:post_id", controller.GetPostDetail)
+	auth.DELETE("/posts/:post_id", controller.DeletePost)
+	auth.POST("/posts/:post_id/like", controller.LikePost)
+	auth.POST("/posts/likes", controller.GetLikeStatus)
+	auth.POST("/posts/:post_id/comment", controller.CreateComment)
+	auth.POST("/agent/chat", controller.AgentChat)
 
-	commentAuth.POST(
-		"/create",
-		controller.CreateComment,
-	)
-	commentAuth.GET(
-		"/list/:post_id",
-		controller.GetCommentList,
-	)
-	commentAuth.DELETE(
-		"/:id",
-		controller.DeleteComment,
-	)
-	r.Run(":8080")
+	admin := api.Group("/admin")
+	admin.Use(middleware.JWTAuth(), middleware.AdminAuth())
+	admin.DELETE("/posts/:post_id", controller.AdminDeletePost)
+
 }

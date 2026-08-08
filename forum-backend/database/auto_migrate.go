@@ -11,6 +11,8 @@ func AutoMigrate() {
 		&model.Post{},
 		&model.Comment{},
 		&model.Like{},
+		&model.AgentMessage{},
+		&model.AgentDraft{},
 	)
 	if err != nil {
 		panic("数据库迁移失败")
