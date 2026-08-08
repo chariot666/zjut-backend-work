@@ -54,7 +54,7 @@ func registerRoutes(r *gin.Engine) {
 	auth.GET("/posts", controller.GetPostList)
 	auth.GET("/posts/:post_id", controller.GetPostDetail)
 	auth.DELETE("/posts/:post_id", controller.DeletePost)
-	auth.POST("/posts/:post_id/like", controller.LikePost)
+	auth.POST("/posts/:post_id/like", middleware.LikeRateLimit(), controller.LikePost)
 	auth.POST("/posts/likes", controller.GetLikeStatus)
 	auth.POST("/posts/:post_id/comment", controller.CreateComment)
 	auth.POST("/agent/chat", controller.AgentChat)
