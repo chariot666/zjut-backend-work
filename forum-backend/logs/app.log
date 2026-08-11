@@ -165,3 +165,11 @@
 2026/08/08 15:46:38 logger.go:44: [request] method=POST path=/api/v1/agent/chat status=200 latency=16.6437557s client_ip=127.0.0.1
 2026/08/08 15:47:10 logger.go:44: [request] method=POST path=/api/v1/agent/chat status=200 latency=23.4753ms client_ip=127.0.0.1
 2026/08/08 15:50:30 logger.go:44: [request] method=GET path=/api/v1/posts?page=1&page_size=20 status=200 latency=107.5907ms client_ip=127.0.0.1
+2026/08/11 08:07:20 redis.go:26: Redis连接失败，服务将不使用缓存运行: dial tcp 127.0.0.1:6379: connectex: No connection could be made because the target machine actively refused it.
+2026/08/11 08:52:50 logger.go:44: [request] method=POST path=/api/v1/auth/login status=200 latency=242.54ms client_ip=127.0.0.1
+2026/08/11 08:52:58 logger.go:44: [request] method=POST path=/api/v1/agent/chat status=500 latency=73.3393ms client_ip=127.0.0.1
+2026/08/11 08:53:02 logger.go:44: [request] method=POST path=/api/v1/agent/chat status=500 latency=14.5158ms client_ip=127.0.0.1
+2026/08/11 08:53:08 logger.go:44: [request] method=POST path=/api/v1/agent/chat status=500 latency=11.7474ms client_ip=127.0.0.1
+2026/08/11 08:54:52 logger.go:44: [request] method=POST path=/api/v1/agent/chat status=500 latency=10.4629ms client_ip=127.0.0.1
+2026/08/11 08:55:42 logger.go:44: [request] method=POST path=/api/v1/agent/chat status=200 latency=10.810008s client_ip=127.0.0.1
+2026/08/11 08:56:24 logger.go:44: [request] method=POST path=/api/v1/agent/chat status=200 latency=21.4261376s client_ip=127.0.0.1
