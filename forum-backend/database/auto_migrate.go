@@ -5,6 +5,7 @@ import (
 	"forum-backend/model"
 )
 
+// 自动创建并更新表
 func AutoMigrate() {
 	err := DB.AutoMigrate(
 		&model.User{},

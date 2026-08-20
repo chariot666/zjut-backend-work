@@ -43,6 +43,7 @@ func ToggleLike(userID, postID uint) (bool, error) {
 	return isLiked, err
 }
 
+// 批量查某个用户对多个帖子有没有点过赞
 func FindLikesByUserAndPosts(userID uint, postIDs []uint) ([]model.Like, error) {
 	var likes []model.Like
 	if err := database.DB.
@@ -53,6 +54,7 @@ func FindLikesByUserAndPosts(userID uint, postIDs []uint) ([]model.Like, error) 
 	return likes, nil
 }
 
+// 查某个帖子下所有点赞记录，给 Redis 缓存用
 func FindLikesByPostID(postID uint) ([]model.Like, error) {
 	var likes []model.Like
 	if err := database.DB.

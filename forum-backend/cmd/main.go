@@ -21,6 +21,7 @@ func main() {
 	} else {
 		defer logFile.Close()
 	}
+	//连接MYSQL和Redis数据库
 	database.InitMySQL()
 	database.InitRedis()
 	database.AutoMigrate()
@@ -54,9 +55,12 @@ func registerRoutes(r *gin.Engine) {
 	auth.GET("/posts", controller.GetPostList)
 	auth.GET("/posts/:post_id", controller.GetPostDetail)
 	auth.DELETE("/posts/:post_id", controller.DeletePost)
+	auth.PUT("/posts/:post_id", controller.UpdatePost)
 	auth.POST("/posts/:post_id/like", middleware.LikeRateLimit(), controller.LikePost)
 	auth.POST("/posts/likes", controller.GetLikeStatus)
 	auth.POST("/posts/:post_id/comment", controller.CreateComment)
+	auth.GET("/posts/:post_id/comments", controller.GetCommentList)
+	auth.DELETE("/comments/:id", controller.DeleteComment)
 	auth.POST("/agent/chat", controller.AgentChat)
 
 	admin := api.Group("/admin")

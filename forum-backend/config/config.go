@@ -60,6 +60,7 @@ func LoadConfig() {
 	fmt.Println("配置加载成功")
 }
 
+// 读取环境变量
 func loadDotEnv() {
 	file, err := os.Open(".env")
 	if err != nil {
@@ -87,6 +88,7 @@ func loadDotEnv() {
 	}
 }
 
+// 环境变量覆盖
 func applyEnvOverrides() {
 	if value := os.Getenv("SERVER_PORT"); value != "" {
 		if port, err := strconv.Atoi(value); err == nil {

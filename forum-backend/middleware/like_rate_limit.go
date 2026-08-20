@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// 限制点赞频率，3秒内只能点一次
 func LikeRateLimit() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if database.RDB == nil {

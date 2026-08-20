@@ -52,6 +52,7 @@ func RequestLogger() gin.HandlerFunc {
 	}
 }
 
+// 记录panic，防止服务崩溃
 func Recovery() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		defer func() {
